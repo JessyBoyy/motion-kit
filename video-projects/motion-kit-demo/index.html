@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=2160, height=3840" />
+    <title>Creations premium</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 2160px;
+        height: 3840px;
+        overflow: hidden;
+        background: #020305;
+        color: #f8fbff;
+        font-family: sans-serif;
+      }
+      #root {
+        position: relative;
+        width: 2160px;
+        height: 3840px;
+        overflow: hidden;
+        isolation: isolate;
+        --accent: #7cf7e8;
+        --bg: #020305;
+        --glass: rgba(255,255,255,0.095);
+        --stroke: rgba(255,255,255,0.18);
+      }
+      .stage-bg,
+      .aurora,
+      .grid,
+      .vignette,
+      .grain,
+      .transition-light,
+      .transition-panel {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .stage-bg {
+        background:
+          radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--accent) 17%, transparent), transparent 29%),
+          radial-gradient(circle at 78% 74%, rgba(255,255,255,0.09), transparent 26%),
+          linear-gradient(180deg, #080a10 0%, var(--bg) 54%, #000 100%);
+      }
+      .aurora {
+        opacity: 0.32;
+        background: conic-gradient(from 210deg at 50% 50%, transparent, color-mix(in srgb, var(--accent) 42%, transparent), transparent 32%, rgba(255,255,255,0.16), transparent 68%);
+        filter: blur(162px);
+      }
+      .grid {
+        top: 46%;
+        height: 76%;
+        transform: perspective(1685px) rotateX(63deg);
+        transform-origin: center top;
+        opacity: 0.52;
+        background:
+          repeating-linear-gradient(90deg, rgba(255,255,255,0.12) 0 2px, transparent 2px 147px),
+          repeating-linear-gradient(0deg, rgba(255,255,255,0.085) 0 2px, transparent 2px 147px);
+        mask-image: linear-gradient(180deg, transparent, #000 16%, #000 68%, transparent);
+      }
+      .vignette {
+        z-index: 80;
+        background: radial-gradient(ellipse at center, transparent 34%, rgba(0,0,0,0.86) 82%, #000 100%);
+      }
+      .grain {
+        z-index: 90;
+        opacity: 0.24;
+        mix-blend-mode: screen;
+        background-image:
+          radial-gradient(circle at 1px 1px, rgba(255,255,255,0.08) 1px, transparent 0),
+          radial-gradient(circle at 4px 3px, rgba(255,255,255,0.045) 1px, transparent 0);
+        background-size: 7px 7px, 13px 13px;
+      }
+      .transition-light {
+        z-index: 70;
+        width: 22%;
+        left: -34%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.94), var(--accent), transparent);
+        filter: blur(28px);
+        opacity: 0;
+        transform: skewX(-18deg);
+      }
+      .transition-panel {
+        z-index: 68;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+        opacity: 0;
+        transform: translateX(-105%) skewX(-8deg);
+      }
+      .scene {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+      }
+      .scene-content {
+        width: 100%;
+        height: 100%;
+        padding: 173px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 119px;
+      }
+      .copy {
+        position: relative;
+        z-index: 4;
+        max-width: 100%;
+        text-align: center;
+      }
+      .eyebrow {
+        margin-bottom: 54px;
+        font-family: monospace;
+        font-size: 45px;
+        line-height: 1;
+        letter-spacing: 0;
+        color: var(--accent);
+        text-transform: uppercase;
+      }
+      h1 {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0 43px;
+        font-size: 285px;
+        line-height: 0.88;
+        font-weight: 900;
+      }
+      .word {
+        display: inline-block;
+        background: linear-gradient(180deg, #fff 0%, #f0f4f9 42%, #8f99a7 73%, #fff 100%);
+        -webkit-background-clip: text;
+        color: transparent;
+        text-shadow: 0 0 76px rgba(255,255,255,0.16);
+      }
+      .subtitle {
+        max-width: 1685px;
+        margin-top: 78px;
+        font-size: 84px;
+        line-height: 1.16;
+        color: rgba(248,251,255,0.72);
+      }
+      .hero-layout,
+      .cta-layout {
+        text-align: center;
+      }
+      .hero-layout .copy,
+      .cta-layout .copy {
+        max-width: 1858px;
+        text-align: center;
+      }
+      .hero-layout h1,
+      .cta-layout h1 {
+        justify-content: center;
+      }
+      .cards-layout {
+        flex-direction: column;
+      }
+      .card-stage {
+        position: relative;
+        z-index: 3;
+        width: 1339px;
+        height: 1469px;
+        perspective: 2484px;
+      }
+      .glass-card {
+        position: absolute;
+        width: 821px;
+        min-height: 950px;
+        border-radius: 86px;
+        padding: 82px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        border: 2px solid var(--stroke);
+        background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04) 42%, rgba(255,255,255,0.10));
+        box-shadow:
+          inset 0 2px 0 rgba(255,255,255,0.24),
+          0 119px 281px rgba(0,0,0,0.45),
+          0 0 162px color-mix(in srgb, var(--accent) 34%, transparent);
+        backdrop-filter: blur(32px) saturate(1.16);
+      }
+      .glass-card span {
+        font-family: monospace;
+        font-size: 50px;
+        color: rgba(255,255,255,0.55);
+      }
+      .glass-card strong {
+        font-size: 121px;
+        line-height: 0.95;
+      }
+      .card-1 { left: 4%; top: 18%; transform: rotateY(-15deg) rotateZ(-8deg); }
+      .card-2 { left: 30%; top: 3%; transform: translateZ(70px); }
+      .card-3 { left: 52%; top: 24%; transform: rotateY(14deg) rotateZ(8deg); }
+      .card-4 { left: 18%; top: 48%; transform: rotateY(-8deg) rotateZ(4deg); }
+      .product-layout {
+        flex-direction: column-reverse;
+      }
+      .product-frame {
+        position: relative;
+        z-index: 3;
+        width: 1382px;
+        aspect-ratio: 0.72;
+        border-radius: 86px;
+        padding: 69px;
+        border: 2px solid rgba(255,255,255,0.18);
+        background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.03));
+        box-shadow: 0 130px 346px rgba(0,0,0,0.58);
+      }
+      .device {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        border-radius: 62px;
+        background:
+          radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 23%),
+          linear-gradient(180deg, #151923, #05070b);
+      }
+      .device-glow {
+        position: absolute;
+        inset: 18%;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,255,255,0.94), var(--accent) 42%, transparent 70%);
+        filter: blur(39px);
+      }
+      .device-bar,
+      .device-row {
+        position: absolute;
+        left: 10%;
+        height: 3.4%;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.74);
+      }
+      .device-bar { top: 9%; width: 36%; background: var(--accent); }
+      .device-row { top: 70%; width: 58%; }
+      .device-row.wide { top: 62%; width: 78%; }
+      .device-row.short { top: 78%; width: 42%; }
+      .device-core {
+        position: absolute;
+        width: 34%;
+        aspect-ratio: 1;
+        left: 50%;
+        top: 42%;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        background: radial-gradient(circle at 35% 25%, #fff, var(--accent) 42%, #14242a 78%);
+        box-shadow: 0 0 259px var(--accent);
+      }
+      .mark {
+        width: 475px;
+        aspect-ratio: 1;
+        margin-bottom: 97px;
+        display: grid;
+        place-items: center;
+        border-radius: 119px;
+        color: #05070b;
+        background: linear-gradient(135deg, #fff, var(--accent));
+        font-size: 162px;
+        font-weight: 900;
+        box-shadow: 0 0 259px color-mix(in srgb, var(--accent) 45%, transparent);
+      }
+      .cta-layout {
+        flex-direction: column;
+      }
+      .timeline-chip {
+        position: absolute;
+        z-index: 6;
+        left: 173px;
+        bottom: 173px;
+        font-family: monospace;
+        font-size: 39px;
+        color: rgba(255,255,255,0.48);
+      }
+
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="motion-kit-demo"
+      data-start="0"
+      data-duration="10.9"
+      data-width="2160"
+      data-height="3840"
+    >
+      <div class="stage-bg"></div>
+      <div class="aurora"></div>
+      <div class="grid"></div>
+      <div class="transition-panel"></div>
+      <div class="transition-light"></div>
+      
+      <section id="scene-1" class="clip scene scene-hero" data-start="0.00" data-duration="2.5" data-track-index="10">
+        <div class="scene-content hero-layout">
+          <div class="copy">
+            <p class="eyebrow">Motion Kit</p>
+            <h1><span class="word">Creations</span><span class="word">premium</span></h1>
+            <p class="subtitle">A generator for Apple-style creator ads.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="scene-2" class="clip scene scene-cards" data-start="2.50" data-duration="2.7" data-track-index="11">
+        <div class="scene-content cards-layout">
+          <div class="copy">
+            <p class="eyebrow">Personalize</p>
+            <h1><span class="word">Choose</span><span class="word">the</span><span class="word">animation</span></h1>
+            <p class="subtitle">Text, cards, reveal, transition, rhythm, color.</p>
+          </div>
+          <div class="card-stage" aria-hidden="true">
+            
+            <div class="glass-card card-1">
+              <span>01</span>
+              <strong>Kinetic text</strong>
+            </div>
+            <div class="glass-card card-2">
+              <span>02</span>
+              <strong>Liquid cards</strong>
+            </div>
+            <div class="glass-card card-3">
+              <span>03</span>
+              <strong>Product reveal</strong>
+            </div>
+            <div class="glass-card card-4">
+              <span>04</span>
+              <strong>CTA hold</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scene-3" class="clip scene scene-product" data-start="5.20" data-duration="2.6" data-track-index="12">
+        <div class="scene-content product-layout">
+          <div class="product-frame" aria-hidden="true">
+            <div class="device">
+              <div class="device-glow"></div>
+              <div class="device-bar"></div>
+              <div class="device-row wide"></div>
+              <div class="device-row"></div>
+              <div class="device-row short"></div>
+              <div class="device-core"></div>
+            </div>
+          </div>
+          <div class="copy">
+            <p class="eyebrow">Formats</p>
+            <h1><span class="word">9:16</span><span class="word">or</span><span class="word">16:9</span></h1>
+            <p class="subtitle">Generate 4K vertical for shorts or 4K landscape for launch videos.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="scene-4" class="clip scene scene-cta" data-start="7.80" data-duration="3.1" data-track-index="13">
+        <div class="scene-content cta-layout">
+          <div class="mark" aria-hidden="true">M</div>
+          <div class="copy">
+            <p class="eyebrow">Export</p>
+            <h1><span class="word">Preview.</span><span class="word">Render.</span><span class="word">Post.</span></h1>
+            <p class="subtitle">Change the recipe, regenerate, and keep iterating.</p>
+          </div>
+        </div>
+      </section>
+      <div class="timeline-chip">9:16-4k / punchy / light-sweep</div>
+      <div class="vignette"></div>
+      <div class="grain"></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      gsap.set(".eyebrow, .word, .subtitle, .glass-card, .product-frame, .mark", { opacity: 0 });
+      tl.fromTo(".grid", { y: 76, opacity: 0 }, { y: 0, opacity: 0.52, duration: 1.1, ease: "power3.out" }, 0);
+      tl.to(".grid", { backgroundPosition: "0px 389px", duration: 10.9, ease: "none" }, 0);
+      tl.fromTo(".aurora", { rotate: 0, scale: 1.25 }, { rotate: 18, scale: 1.38, duration: 10.9, ease: "sine.inOut" }, 0);
+      tl.to(".vignette", { opacity: 0.84, duration: 2.2, repeat: Math.max(0, Math.floor(10.9 / 2.2) - 1), yoyo: true, ease: "sine.inOut" }, 0);
+      
+      tl.fromTo("#scene-1 .eyebrow", { y: 75, opacity: 0, filter: "blur(17px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 0.16);
+      tl.fromTo("#scene-1 .word", { y: 214, scale: 0.92, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "power4.out", stagger: 0.065 }, 0.28);
+      tl.fromTo("#scene-1 .subtitle", { y: 90, opacity: 0, filter: "blur(17px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.48, ease: "power3.out" }, 0.92);
+      tl.fromTo("#scene-1 .glass-card", { y: 235, rotateX: 16, scale: 0.9, opacity: 0, filter: "blur(31px)" }, { y: 0, rotateX: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.76, ease: "power3.out", stagger: 0.09 }, 0.54);
+      tl.fromTo("#scene-1 .product-frame", { y: 257, scale: 0.88, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.78, ease: "power3.out" }, 0.44);
+      tl.fromTo("#scene-1 .mark", { y: 150, scale: 0.72, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "back.out(1.55)" }, 0.20);
+      tl.to("#scene-1 .device-core, #scene-1 .device-glow", { rotate: 180, duration: 2.5, ease: "none" }, 0.00);
+      tl.to("#scene-1 .word", { y: -107, opacity: 0, filter: "blur(22px)", duration: 0.34, ease: "power2.in", stagger: 0.018 }, 2.04);
+      tl.to("#scene-1 .subtitle, #scene-1 .eyebrow, #scene-1 .glass-card, #scene-1 .product-frame, #scene-1 .mark", { y: -64, opacity: 0, filter: "blur(20px)", duration: 0.3, ease: "power2.in" }, 2.10);
+      tl.fromTo(".transition-light", { x: 0, opacity: 0 }, { x: 11232, opacity: 0.86, duration: 0.54, ease: "power3.inOut" }, 2.32);
+      tl.to(".transition-light", { opacity: 0, duration: 0.2, ease: "power2.out" }, 2.88);
+      tl.fromTo("#scene-2 .eyebrow", { y: 75, opacity: 0, filter: "blur(17px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 2.66);
+      tl.fromTo("#scene-2 .word", { y: 214, scale: 0.92, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "power4.out", stagger: 0.065 }, 2.78);
+      tl.fromTo("#scene-2 .subtitle", { y: 90, opacity: 0, filter: "blur(17px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.48, ease: "power3.out" }, 3.42);
+      tl.fromTo("#scene-2 .glass-card", { y: 235, rotateX: 16, scale: 0.9, opacity: 0, filter: "blur(31px)" }, { y: 0, rotateX: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.76, ease: "power3.out", stagger: 0.09 }, 3.04);
+      tl.fromTo("#scene-2 .product-frame", { y: 257, scale: 0.88, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.78, ease: "power3.out" }, 2.94);
+      tl.fromTo("#scene-2 .mark", { y: 150, scale: 0.72, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "back.out(1.55)" }, 2.70);
+      tl.to("#scene-2 .device-core, #scene-2 .device-glow", { rotate: 180, duration: 2.7, ease: "none" }, 2.50);
+      tl.to("#scene-2 .word", { y: -107, opacity: 0, filter: "blur(22px)", duration: 0.34, ease: "power2.in", stagger: 0.018 }, 4.74);
+      tl.to("#scene-2 .subtitle, #scene-2 .eyebrow, #scene-2 .glass-card, #scene-2 .product-frame, #scene-2 .mark", { y: -64, opacity: 0, filter: "blur(20px)", duration: 0.3, ease: "power2.in" }, 4.80);
+      tl.fromTo(".transition-light", { x: 0, opacity: 0 }, { x: 11232, opacity: 0.86, duration: 0.54, ease: "power3.inOut" }, 5.02);
+      tl.to(".transition-light", { opacity: 0, duration: 0.2, ease: "power2.out" }, 5.58);
+      tl.fromTo("#scene-3 .eyebrow", { y: 75, opacity: 0, filter: "blur(17px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 5.36);
+      tl.fromTo("#scene-3 .word", { y: 214, scale: 0.92, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "power4.out", stagger: 0.065 }, 5.48);
+      tl.fromTo("#scene-3 .subtitle", { y: 90, opacity: 0, filter: "blur(17px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.48, ease: "power3.out" }, 6.12);
+      tl.fromTo("#scene-3 .glass-card", { y: 235, rotateX: 16, scale: 0.9, opacity: 0, filter: "blur(31px)" }, { y: 0, rotateX: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.76, ease: "power3.out", stagger: 0.09 }, 5.74);
+      tl.fromTo("#scene-3 .product-frame", { y: 257, scale: 0.88, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.78, ease: "power3.out" }, 5.64);
+      tl.fromTo("#scene-3 .mark", { y: 150, scale: 0.72, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "back.out(1.55)" }, 5.40);
+      tl.to("#scene-3 .device-core, #scene-3 .device-glow", { rotate: 180, duration: 2.6, ease: "none" }, 5.20);
+      tl.to("#scene-3 .word", { y: -107, opacity: 0, filter: "blur(22px)", duration: 0.34, ease: "power2.in", stagger: 0.018 }, 7.34);
+      tl.to("#scene-3 .subtitle, #scene-3 .eyebrow, #scene-3 .glass-card, #scene-3 .product-frame, #scene-3 .mark", { y: -64, opacity: 0, filter: "blur(20px)", duration: 0.3, ease: "power2.in" }, 7.40);
+      tl.fromTo(".transition-light", { x: 0, opacity: 0 }, { x: 11232, opacity: 0.86, duration: 0.54, ease: "power3.inOut" }, 7.62);
+      tl.to(".transition-light", { opacity: 0, duration: 0.2, ease: "power2.out" }, 8.18);
+      tl.fromTo("#scene-4 .eyebrow", { y: 75, opacity: 0, filter: "blur(17px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, 7.96);
+      tl.fromTo("#scene-4 .word", { y: 214, scale: 0.92, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "power4.out", stagger: 0.065 }, 8.08);
+      tl.fromTo("#scene-4 .subtitle", { y: 90, opacity: 0, filter: "blur(17px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.48, ease: "power3.out" }, 8.72);
+      tl.fromTo("#scene-4 .glass-card", { y: 235, rotateX: 16, scale: 0.9, opacity: 0, filter: "blur(31px)" }, { y: 0, rotateX: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.76, ease: "power3.out", stagger: 0.09 }, 8.34);
+      tl.fromTo("#scene-4 .product-frame", { y: 257, scale: 0.88, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.78, ease: "power3.out" }, 8.24);
+      tl.fromTo("#scene-4 .mark", { y: 150, scale: 0.72, opacity: 0, filter: "blur(31px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "back.out(1.55)" }, 8.00);
+      tl.to("#scene-4 .device-core, #scene-4 .device-glow", { rotate: 180, duration: 3.1, ease: "none" }, 7.80);
+      tl.to("#scene-4 .word", { y: -107, opacity: 0, filter: "blur(22px)", duration: 0.34, ease: "power2.in", stagger: 0.018 }, 10.44);
+      tl.to("#scene-4 .subtitle, #scene-4 .eyebrow, #scene-4 .glass-card, #scene-4 .product-frame, #scene-4 .mark", { y: -64, opacity: 0, filter: "blur(20px)", duration: 0.3, ease: "power2.in" }, 10.50);
+      tl.to({}, { duration: 10.9 }, 0);
+
+      window.__timelines["motion-kit-demo"] = tl;
+    </script>
+  </body>
+</html>

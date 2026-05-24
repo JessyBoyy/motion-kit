@@ -1,0 +1,43 @@
+{
+  "name": "motion-kit-apple-pub",
+  "format": "9:16-4k",
+  "preset": "apple-keynote",
+  "motion": "punchy",
+  "transition": "light-sweep",
+  "brand": {
+    "label": "Motion Kit",
+    "accent": "#7cf7e8",
+    "background": "#020305"
+  },
+  "scenes": [
+    {
+      "type": "hero",
+      "eyebrow": "Motion Kit",
+      "title": "Creations premium",
+      "subtitle": "A generator for Apple-style creator ads.",
+      "duration": 2.5
+    },
+    {
+      "type": "cards",
+      "eyebrow": "Personalize",
+      "title": "Choose the animation",
+      "subtitle": "Text, cards, reveal, transition, rhythm, color.",
+      "cards": ["Kinetic text", "Liquid cards", "Product reveal", "CTA hold"],
+      "duration": 2.7
+    },
+    {
+      "type": "product",
+      "eyebrow": "Formats",
+      "title": "9:16 or 16:9",
+      "subtitle": "Generate 4K vertical for shorts or 4K landscape for launch videos.",
+      "duration": 2.6
+    },
+    {
+      "type": "cta",
+      "eyebrow": "Export",
+      "title": "Preview. Render. Post.",
+      "subtitle": "Change the recipe, regenerate, and keep iterating.",
+      "duration": 3.1
+    }
+  ]
+}

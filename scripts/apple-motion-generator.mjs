@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 const formats = {
   "9:16-4k": { width: 2160, height: 3840, label: "9:16 4K" },
@@ -10,7 +10,13 @@ const formats = {
   "16:9": { width: 1920, height: 1080, label: "16:9 HD" },
 };
 
-const presets = new Set(["kinetic-text", "liquid-cards", "product-reveal"]);
+const presets = new Set(["apple-keynote", "kinetic-text", "liquid-cards", "product-reveal"]);
+const transitions = new Set(["light-sweep", "zoom-blur", "card-wipe"]);
+const motionLevels = {
+  calm: { speed: 0.86, blur: 0.72, travel: 0.7, scale: 0.94 },
+  balanced: { speed: 1, blur: 1, travel: 1, scale: 1 },
+  punchy: { speed: 1.16, blur: 1.28, travel: 1.24, scale: 1.08 },
+};
 
 function parseArgs(argv) {
   const args = {};
@@ -25,7 +31,7 @@ function parseArgs(argv) {
 }
 
 function slugify(value) {
-  return value
+  return String(value)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -35,7 +41,7 @@ function slugify(value) {
 }
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -46,21 +52,150 @@ function assertHex(value, fallback) {
   return /^#[0-9a-f]{6}$/i.test(value || "") ? value : fallback;
 }
 
+function parseList(value, fallback) {
+  if (!value) return fallback;
+  return String(value)
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function usage() {
-  console.log(`Apple-like HyperFrames generator
+  console.log(`Motion Kit generator
 
 Usage:
-  npm run generate:apple -- --name launch-hook --format 9:16-4k --preset kinetic-text --title "Create faster" --subtitle "One idea. One premium motion system."
+  npm run generate:motion -- --name launch-film --format 9:16-4k --preset apple-keynote --title "Create faster"
+  npm run generate:motion -- --config docs/motion-kit.apple-pub.json --name my-variant
 
 Options:
-  --name       Project folder name in video-projects/       default: generated from title
-  --format     9:16-4k | 16:9-4k | 9:16 | 16:9             default: 9:16-4k
-  --preset     kinetic-text | liquid-cards | product-reveal default: kinetic-text
-  --title      Main headline                                default: Make it feel inevitable
-  --subtitle   Secondary line                               default: Fast premium motion for creator videos.
-  --accent     Accent hex color                             default: #7cf7e8
-  --duration   Seconds                                      default: 6
+  --config       JSON recipe with brand, scenes, transition, motion level
+  --name         Project folder in video-projects/
+  --format       9:16-4k | 16:9-4k | 9:16 | 16:9
+  --preset       apple-keynote | kinetic-text | liquid-cards | product-reveal
+  --motion       calm | balanced | punchy
+  --transition   light-sweep | zoom-blur | card-wipe
+  --title        Main headline for quick mode
+  --subtitle     Secondary line for quick mode
+  --eyebrow      Small label above the headline
+  --cards        Card labels separated by "|"
+  --accent       Accent hex color
+  --duration     Per-scene duration in quick mode
+  --force        Overwrite an existing generated project
 `);
+}
+
+function loadConfig(configPath) {
+  if (!configPath) return {};
+  const fullPath = resolve(configPath);
+  const raw = readFileSync(fullPath, "utf8");
+  return JSON.parse(raw);
+}
+
+function quickConfig(args) {
+  const title = args.title || "Make every creation feel cinematic";
+  const subtitle = args.subtitle || "Fast Apple-style motion with editable scenes, cards, color, timing, and format.";
+  const cards = parseList(args.cards, ["Hook", "Reveal", "Proof"]);
+  const duration = Number(args.duration || 2.4);
+  return {
+    name: args.name || slugify(title),
+    format: args.format || "9:16-4k",
+    preset: args.preset || "apple-keynote",
+    motion: args.motion || "balanced",
+    transition: args.transition || "light-sweep",
+    brand: {
+      accent: args.accent || "#7cf7e8",
+      background: "#020305",
+      label: args.eyebrow || "Motion Kit",
+    },
+    scenes: [
+      {
+        type: args.preset === "kinetic-text" ? "kinetic" : "hero",
+        eyebrow: args.eyebrow || "Motion Kit",
+        title,
+        subtitle,
+        duration,
+      },
+      {
+        type: "cards",
+        eyebrow: "Personalize",
+        title: "Change the rhythm",
+        subtitle: "Swap text, cards, colors, and transitions without rebuilding the composition.",
+        cards,
+        duration,
+      },
+      {
+        type: "product",
+        eyebrow: "Render",
+        title: "Pick the format",
+        subtitle: "9:16 4K for Shorts and Reels. 16:9 4K for YouTube, launch films, and decks.",
+        duration,
+      },
+      {
+        type: "cta",
+        eyebrow: args.eyebrow || "Motion Kit",
+        title: "Ready to export",
+        subtitle: "Preview, lint, render, iterate.",
+        duration: Math.max(duration + 0.6, 3),
+      },
+    ],
+  };
+}
+
+function mergeConfig(fileConfig, args) {
+  const quick = quickConfig(args);
+  const config = {
+    ...quick,
+    ...fileConfig,
+    brand: { ...quick.brand, ...(fileConfig.brand || {}) },
+  };
+
+  if (args.name) config.name = args.name;
+  if (args.format) config.format = args.format;
+  if (args.preset) config.preset = args.preset;
+  if (args.motion) config.motion = args.motion;
+  if (args.transition) config.transition = args.transition;
+  if (args.accent) config.brand.accent = args.accent;
+
+  config.name = slugify(config.name || config.scenes?.[0]?.title || "motion-kit");
+  config.format = config.format || "9:16-4k";
+  config.preset = config.preset || "apple-keynote";
+  config.motion = config.motion || "balanced";
+  config.transition = config.transition || "light-sweep";
+  config.brand.accent = assertHex(config.brand.accent, "#7cf7e8");
+  config.brand.background = assertHex(config.brand.background, "#020305");
+  config.scenes = Array.isArray(config.scenes) && config.scenes.length ? config.scenes : quick.scenes;
+  config.scenes = config.scenes.map((scene, index) => ({
+    type: scene.type || ["hero", "cards", "product", "cta"][index] || "hero",
+    eyebrow: scene.eyebrow || config.brand.label || "Motion Kit",
+    title: scene.title || `Scene ${index + 1}`,
+    subtitle: scene.subtitle || "",
+    cards: Array.isArray(scene.cards) ? scene.cards : ["Hook", "Reveal", "Hold"],
+    duration: Number(scene.duration || 2.4),
+  }));
+
+  return config;
+}
+
+function validateConfig(config) {
+  const format = formats[config.format];
+  if (!format) {
+    throw new Error(`Unknown format "${config.format}". Expected one of: ${Object.keys(formats).join(", ")}`);
+  }
+  if (!presets.has(config.preset)) {
+    throw new Error(`Unknown preset "${config.preset}". Expected one of: ${Array.from(presets).join(", ")}`);
+  }
+  if (!transitions.has(config.transition)) {
+    throw new Error(`Unknown transition "${config.transition}". Expected one of: ${Array.from(transitions).join(", ")}`);
+  }
+  if (!motionLevels[config.motion]) {
+    throw new Error(`Unknown motion "${config.motion}". Expected one of: ${Object.keys(motionLevels).join(", ")}`);
+  }
+  for (const [index, scene] of config.scenes.entries()) {
+    if (!Number.isFinite(scene.duration) || scene.duration <= 0) {
+      throw new Error(`Scene ${index + 1} has an invalid duration.`);
+    }
+  }
+  return format;
 }
 
 function createHyperframesJson() {
@@ -94,161 +229,212 @@ function createMeta({ id, name, width, height }) {
   )}\n`;
 }
 
+function createProjectConfig(config) {
+  return `${JSON.stringify(config, null, 2)}\n`;
+}
+
 function createWords(title) {
   return escapeHtml(title)
     .split(/\s+/)
     .filter(Boolean)
     .map((word) => `<span class="word">${word}</span>`)
-    .join("\n            ");
+    .join("");
 }
 
-function presetMarkup(preset, title, subtitle) {
-  const safeSubtitle = escapeHtml(subtitle);
-  if (preset === "liquid-cards") {
+function sceneMarkup(scene, index, start, width, height) {
+  const sceneId = `scene-${index + 1}`;
+  const cards = scene.cards.slice(0, 4);
+  const commonAttrs = `id="${sceneId}" class="clip scene scene-${scene.type}" data-start="${start.toFixed(2)}" data-duration="${scene.duration}" data-track-index="${10 + index}"`;
+
+  if (scene.type === "cards") {
     return `
-        <section class="hero hero-cards">
+      <section ${commonAttrs}>
+        <div class="scene-content cards-layout">
           <div class="copy">
-            <p class="eyebrow">Motion Generator</p>
-            <h1>${createWords(title)}</h1>
-            <p class="subtitle">${safeSubtitle}</p>
+            <p class="eyebrow">${escapeHtml(scene.eyebrow)}</p>
+            <h1>${createWords(scene.title)}</h1>
+            <p class="subtitle">${escapeHtml(scene.subtitle)}</p>
           </div>
-          <div class="card-stack" aria-hidden="true">
-            <div class="glass-card card-a"><span>Hook</span><strong>0.4s</strong></div>
-            <div class="glass-card card-b"><span>Reveal</span><strong>1.2s</strong></div>
-            <div class="glass-card card-c"><span>Hold</span><strong>2.8s</strong></div>
+          <div class="card-stage" aria-hidden="true">
+            ${cards
+              .map(
+                (card, cardIndex) => `
+            <div class="glass-card card-${cardIndex + 1}">
+              <span>${String(cardIndex + 1).padStart(2, "0")}</span>
+              <strong>${escapeHtml(card)}</strong>
+            </div>`
+              )
+              .join("")}
           </div>
-        </section>`;
+        </div>
+      </section>`;
   }
 
-  if (preset === "product-reveal") {
+  if (scene.type === "product") {
     return `
-        <section class="hero hero-product">
-          <div class="product-shell" aria-hidden="true">
-            <div class="screen">
-              <div class="screen-bar"></div>
-              <div class="screen-row wide"></div>
-              <div class="screen-row"></div>
-              <div class="screen-row short"></div>
-              <div class="orb-core"></div>
+      <section ${commonAttrs}>
+        <div class="scene-content product-layout">
+          <div class="product-frame" aria-hidden="true">
+            <div class="device">
+              <div class="device-glow"></div>
+              <div class="device-bar"></div>
+              <div class="device-row wide"></div>
+              <div class="device-row"></div>
+              <div class="device-row short"></div>
+              <div class="device-core"></div>
             </div>
           </div>
-          <div class="copy product-copy">
-            <p class="eyebrow">Creator System</p>
-            <h1>${createWords(title)}</h1>
-            <p class="subtitle">${safeSubtitle}</p>
+          <div class="copy">
+            <p class="eyebrow">${escapeHtml(scene.eyebrow)}</p>
+            <h1>${createWords(scene.title)}</h1>
+            <p class="subtitle">${escapeHtml(scene.subtitle)}</p>
           </div>
-        </section>`;
+        </div>
+      </section>`;
+  }
+
+  if (scene.type === "cta") {
+    return `
+      <section ${commonAttrs}>
+        <div class="scene-content cta-layout">
+          <div class="mark" aria-hidden="true">${width > height ? "MK" : "M"}</div>
+          <div class="copy">
+            <p class="eyebrow">${escapeHtml(scene.eyebrow)}</p>
+            <h1>${createWords(scene.title)}</h1>
+            <p class="subtitle">${escapeHtml(scene.subtitle)}</p>
+          </div>
+        </div>
+      </section>`;
   }
 
   return `
-        <section class="hero hero-kinetic">
-          <p class="eyebrow">Kinetic Type</p>
-          <h1>${createWords(title)}</h1>
-          <p class="subtitle">${safeSubtitle}</p>
-        </section>`;
+      <section ${commonAttrs}>
+        <div class="scene-content hero-layout">
+          <div class="copy">
+            <p class="eyebrow">${escapeHtml(scene.eyebrow)}</p>
+            <h1>${createWords(scene.title)}</h1>
+            <p class="subtitle">${escapeHtml(scene.subtitle)}</p>
+          </div>
+        </div>
+      </section>`;
 }
 
-function createHtml({ id, title, subtitle, preset, width, height, duration, accent }) {
+function createCss({ id, config, width, height, totalDuration }) {
   const landscape = width > height;
   const shortSide = Math.min(width, height);
-  const pad = Math.round(shortSide * 0.075);
-  const headlineSize = Math.round(shortSide * (landscape ? 0.12 : 0.145));
-  const subtitleSize = Math.round(shortSide * (landscape ? 0.032 : 0.044));
-  const eyebrowSize = Math.round(shortSide * 0.024);
-  const radius = Math.round(shortSide * 0.038);
+  const longSide = Math.max(width, height);
+  const pad = Math.round(shortSide * 0.08);
+  const headlineSize = Math.round(shortSide * (landscape ? 0.112 : 0.132));
+  const subtitleSize = Math.round(shortSide * (landscape ? 0.03 : 0.039));
+  const eyebrowSize = Math.round(shortSide * 0.021);
+  const radius = Math.round(shortSide * 0.04);
+  const brand = config.brand;
 
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=${width}, height=${height}" />
-    <title>${escapeHtml(title)}</title>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=block"
-      rel="stylesheet"
-    />
-    <style>
+  return `
       * { margin: 0; padding: 0; box-sizing: border-box; }
       html, body {
         width: ${width}px;
         height: ${height}px;
         overflow: hidden;
-        background: #020305;
+        background: ${brand.background};
         color: #f8fbff;
-        font-family: "Inter", system-ui, sans-serif;
+        font-family: sans-serif;
       }
       #root {
         position: relative;
         width: ${width}px;
         height: ${height}px;
         overflow: hidden;
-        --accent: ${accent};
-        --accent-soft: color-mix(in srgb, var(--accent) 34%, transparent);
+        isolation: isolate;
+        --accent: ${brand.accent};
+        --bg: ${brand.background};
+        --glass: rgba(255,255,255,0.095);
+        --stroke: rgba(255,255,255,0.18);
       }
       .stage-bg,
+      .aurora,
       .grid,
       .vignette,
-      .light-sweep,
-      .grain {
+      .grain,
+      .transition-light,
+      .transition-panel {
         position: absolute;
         inset: 0;
         pointer-events: none;
       }
       .stage-bg {
         background:
-          radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 28%),
-          radial-gradient(circle at 82% 72%, rgba(255,255,255,0.10), transparent 24%),
-          linear-gradient(180deg, #07090e 0%, #020305 58%, #000 100%);
+          radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--accent) 17%, transparent), transparent 29%),
+          radial-gradient(circle at 78% 74%, rgba(255,255,255,0.09), transparent 26%),
+          linear-gradient(180deg, #080a10 0%, var(--bg) 54%, #000 100%);
+      }
+      .aurora {
+        opacity: 0.32;
+        background: conic-gradient(from 210deg at 50% 50%, transparent, color-mix(in srgb, var(--accent) 42%, transparent), transparent 32%, rgba(255,255,255,0.16), transparent 68%);
+        filter: blur(${Math.round(shortSide * 0.075)}px);
       }
       .grid {
-        top: 47%;
-        height: 70%;
-        transform: perspective(${Math.round(shortSide * 0.75)}px) rotateX(62deg);
+        top: 46%;
+        height: 76%;
+        transform: perspective(${Math.round(shortSide * 0.78)}px) rotateX(63deg);
         transform-origin: center top;
-        opacity: 0.55;
+        opacity: 0.52;
         background:
-          repeating-linear-gradient(90deg, rgba(255,255,255,0.11) 0 2px, transparent 2px ${Math.round(shortSide * 0.07)}px),
-          repeating-linear-gradient(0deg, rgba(255,255,255,0.09) 0 2px, transparent 2px ${Math.round(shortSide * 0.07)}px);
-        mask-image: linear-gradient(180deg, transparent, #000 18%, #000 70%, transparent);
+          repeating-linear-gradient(90deg, rgba(255,255,255,0.12) 0 2px, transparent 2px ${Math.round(shortSide * 0.068)}px),
+          repeating-linear-gradient(0deg, rgba(255,255,255,0.085) 0 2px, transparent 2px ${Math.round(shortSide * 0.068)}px);
+        mask-image: linear-gradient(180deg, transparent, #000 16%, #000 68%, transparent);
       }
       .vignette {
-        background: radial-gradient(ellipse at center, transparent 34%, rgba(0,0,0,0.88) 82%, #000 100%);
+        z-index: 80;
+        background: radial-gradient(ellipse at center, transparent 34%, rgba(0,0,0,0.86) 82%, #000 100%);
       }
       .grain {
-        opacity: 0.32;
+        z-index: 90;
+        opacity: 0.24;
+        mix-blend-mode: screen;
         background-image:
           radial-gradient(circle at 1px 1px, rgba(255,255,255,0.08) 1px, transparent 0),
-          radial-gradient(circle at 3px 4px, rgba(255,255,255,0.045) 1px, transparent 0);
-        background-size: 7px 7px, 11px 11px;
-        mix-blend-mode: screen;
+          radial-gradient(circle at 4px 3px, rgba(255,255,255,0.045) 1px, transparent 0);
+        background-size: 7px 7px, 13px 13px;
       }
-      .light-sweep {
-        width: 24%;
-        left: -30%;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.82), var(--accent), transparent);
-        filter: blur(${Math.round(shortSide * 0.012)}px);
-        transform: skewX(-18deg);
+      .transition-light {
+        z-index: 70;
+        width: 22%;
+        left: -34%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.94), var(--accent), transparent);
+        filter: blur(${Math.round(shortSide * 0.013)}px);
         opacity: 0;
+        transform: skewX(-18deg);
       }
-      .hero {
+      .transition-panel {
+        z-index: 68;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+        opacity: 0;
+        transform: translateX(-105%) skewX(-8deg);
+      }
+      .scene {
         position: absolute;
         inset: 0;
-        display: flex;
-        gap: ${Math.round(shortSide * 0.055)}px;
+        overflow: hidden;
+      }
+      .scene-content {
+        width: 100%;
+        height: 100%;
         padding: ${pad}px;
+        display: flex;
         align-items: center;
         justify-content: center;
+        gap: ${Math.round(shortSide * 0.055)}px;
       }
       .copy {
         position: relative;
-        z-index: 2;
-        max-width: ${landscape ? "58%" : "100%"};
+        z-index: 4;
+        max-width: ${landscape ? "56%" : "100%"};
         text-align: ${landscape ? "left" : "center"};
       }
       .eyebrow {
         margin-bottom: ${Math.round(shortSide * 0.025)}px;
-        font-family: "JetBrains Mono", monospace;
+        font-family: monospace;
         font-size: ${eyebrowSize}px;
         line-height: 1;
         letter-spacing: 0;
@@ -259,82 +445,93 @@ function createHtml({ id, title, subtitle, preset, width, height, duration, acce
         display: flex;
         flex-wrap: wrap;
         justify-content: ${landscape ? "flex-start" : "center"};
-        gap: 0 ${Math.round(shortSide * 0.024)}px;
+        gap: 0 ${Math.round(shortSide * 0.02)}px;
         font-size: ${headlineSize}px;
-        line-height: 0.9;
+        line-height: 0.88;
         font-weight: 900;
       }
       .word {
         display: inline-block;
-        background: linear-gradient(180deg, #fff 0%, #e8edf4 42%, #8f9aa8 74%, #fff 100%);
+        background: linear-gradient(180deg, #fff 0%, #f0f4f9 42%, #8f99a7 73%, #fff 100%);
         -webkit-background-clip: text;
         color: transparent;
         text-shadow: 0 0 ${Math.round(shortSide * 0.035)}px rgba(255,255,255,0.16);
       }
       .subtitle {
-        max-width: ${Math.round(shortSide * 0.75)}px;
-        margin-top: ${Math.round(shortSide * 0.035)}px;
+        max-width: ${Math.round(shortSide * 0.78)}px;
+        margin-top: ${Math.round(shortSide * 0.036)}px;
         font-size: ${subtitleSize}px;
-        line-height: 1.18;
+        line-height: 1.16;
         color: rgba(248,251,255,0.72);
       }
-      .hero-kinetic {
+      .hero-layout,
+      .cta-layout {
         text-align: center;
       }
-      .hero-kinetic .copy,
-      .hero-kinetic {
-        flex-direction: column;
+      .hero-layout .copy,
+      .cta-layout .copy {
+        max-width: ${Math.round(shortSide * 0.86)}px;
+        text-align: center;
       }
-      .hero-kinetic h1,
-      .hero-kinetic .subtitle {
-        margin-left: auto;
-        margin-right: auto;
+      .hero-layout h1,
+      .cta-layout h1 {
+        justify-content: center;
       }
-      .card-stack {
+      .cards-layout {
+        flex-direction: ${landscape ? "row" : "column"};
+      }
+      .card-stage {
         position: relative;
-        width: ${Math.round(shortSide * 0.55)}px;
-        height: ${Math.round(shortSide * 0.72)}px;
-        perspective: ${Math.round(shortSide * 1.2)}px;
+        z-index: 3;
+        width: ${Math.round(shortSide * (landscape ? 0.5 : 0.62))}px;
+        height: ${Math.round(shortSide * (landscape ? 0.54 : 0.68))}px;
+        perspective: ${Math.round(shortSide * 1.15)}px;
       }
       .glass-card {
         position: absolute;
-        width: ${Math.round(shortSide * 0.44)}px;
-        height: ${Math.round(shortSide * 0.56)}px;
+        width: ${Math.round(shortSide * 0.38)}px;
+        min-height: ${Math.round(shortSide * 0.44)}px;
         border-radius: ${radius}px;
-        padding: ${Math.round(shortSide * 0.045)}px;
+        padding: ${Math.round(shortSide * 0.038)}px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        border: 2px solid rgba(255,255,255,0.18);
+        border: 2px solid var(--stroke);
         background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04) 42%, rgba(255,255,255,0.10));
         box-shadow:
           inset 0 2px 0 rgba(255,255,255,0.24),
           0 ${Math.round(shortSide * 0.055)}px ${Math.round(shortSide * 0.13)}px rgba(0,0,0,0.45),
-          0 0 ${Math.round(shortSide * 0.07)}px var(--accent-soft);
-        backdrop-filter: blur(28px) saturate(1.15);
+          0 0 ${Math.round(shortSide * 0.075)}px color-mix(in srgb, var(--accent) 34%, transparent);
+        backdrop-filter: blur(32px) saturate(1.16);
       }
       .glass-card span {
-        font-family: "JetBrains Mono", monospace;
-        font-size: ${Math.round(shortSide * 0.026)}px;
-        color: rgba(255,255,255,0.62);
+        font-family: monospace;
+        font-size: ${Math.round(shortSide * 0.023)}px;
+        color: rgba(255,255,255,0.55);
       }
       .glass-card strong {
-        font-size: ${Math.round(shortSide * 0.1)}px;
-        line-height: 0.9;
+        font-size: ${Math.round(shortSide * 0.056)}px;
+        line-height: 0.95;
       }
-      .card-a { left: 4%; top: 13%; transform: rotateY(-14deg) rotateZ(-8deg); }
-      .card-b { left: 24%; top: 3%; transform: translateZ(60px); }
-      .card-c { left: 39%; top: 22%; transform: rotateY(13deg) rotateZ(9deg); }
-      .product-shell {
-        width: ${Math.round(shortSide * 0.62)}px;
+      .card-1 { left: 4%; top: 18%; transform: rotateY(-15deg) rotateZ(-8deg); }
+      .card-2 { left: 30%; top: 3%; transform: translateZ(70px); }
+      .card-3 { left: 52%; top: 24%; transform: rotateY(14deg) rotateZ(8deg); }
+      .card-4 { left: 18%; top: 48%; transform: rotateY(-8deg) rotateZ(4deg); }
+      .product-layout {
+        flex-direction: ${landscape ? "row" : "column-reverse"};
+      }
+      .product-frame {
+        position: relative;
+        z-index: 3;
+        width: ${Math.round(shortSide * (landscape ? 0.48 : 0.64))}px;
         aspect-ratio: 0.72;
         border-radius: ${radius}px;
-        padding: ${Math.round(shortSide * 0.035)}px;
+        padding: ${Math.round(shortSide * 0.032)}px;
         border: 2px solid rgba(255,255,255,0.18);
         background: linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.03));
         box-shadow: 0 ${Math.round(shortSide * 0.06)}px ${Math.round(shortSide * 0.16)}px rgba(0,0,0,0.58);
       }
-      .screen {
+      .device {
         position: relative;
         width: 100%;
         height: 100%;
@@ -344,19 +541,26 @@ function createHtml({ id, title, subtitle, preset, width, height, duration, acce
           radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 23%),
           linear-gradient(180deg, #151923, #05070b);
       }
-      .screen-bar,
-      .screen-row {
+      .device-glow {
+        position: absolute;
+        inset: 18%;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(255,255,255,0.94), var(--accent) 42%, transparent 70%);
+        filter: blur(${Math.round(shortSide * 0.018)}px);
+      }
+      .device-bar,
+      .device-row {
         position: absolute;
         left: 10%;
         height: 3.4%;
         border-radius: 999px;
         background: rgba(255,255,255,0.74);
       }
-      .screen-bar { top: 9%; width: 36%; background: var(--accent); }
-      .screen-row { top: 70%; width: 58%; }
-      .screen-row.wide { top: 62%; width: 78%; }
-      .screen-row.short { top: 78%; width: 42%; }
-      .orb-core {
+      .device-bar { top: 9%; width: 36%; background: var(--accent); }
+      .device-row { top: 70%; width: 58%; }
+      .device-row.wide { top: 62%; width: 78%; }
+      .device-row.short { top: 78%; width: 42%; }
+      .device-core {
         position: absolute;
         width: 34%;
         aspect-ratio: 1;
@@ -367,27 +571,96 @@ function createHtml({ id, title, subtitle, preset, width, height, duration, acce
         background: radial-gradient(circle at 35% 25%, #fff, var(--accent) 42%, #14242a 78%);
         box-shadow: 0 0 ${Math.round(shortSide * 0.12)}px var(--accent);
       }
-      .product-copy {
-        max-width: ${landscape ? "46%" : "100%"};
+      .mark {
+        width: ${Math.round(shortSide * 0.22)}px;
+        aspect-ratio: 1;
+        margin-bottom: ${Math.round(shortSide * 0.045)}px;
+        display: grid;
+        place-items: center;
+        border-radius: ${Math.round(shortSide * 0.055)}px;
+        color: #05070b;
+        background: linear-gradient(135deg, #fff, var(--accent));
+        font-size: ${Math.round(shortSide * 0.075)}px;
+        font-weight: 900;
+        box-shadow: 0 0 ${Math.round(shortSide * 0.12)}px color-mix(in srgb, var(--accent) 45%, transparent);
       }
-      @media (orientation: portrait) {
-        .hero-cards,
-        .hero-product {
-          flex-direction: column;
-        }
-        .hero-product .product-shell {
-          order: 2;
-        }
-        .hero-product .product-copy {
-          order: 1;
-        }
-        .copy {
-          text-align: center;
-        }
-        h1 {
-          justify-content: center;
-        }
+      .cta-layout {
+        flex-direction: column;
       }
+      .timeline-chip {
+        position: absolute;
+        z-index: 6;
+        left: ${pad}px;
+        bottom: ${pad}px;
+        font-family: monospace;
+        font-size: ${Math.round(shortSide * 0.018)}px;
+        color: rgba(255,255,255,0.48);
+      }
+`;
+}
+
+function transitionTween(config, width, start) {
+  if (config.transition === "zoom-blur") {
+    return `
+      tl.fromTo("#root", { scale: 1.012, filter: "brightness(1.18) blur(10px)" }, { scale: 1, filter: "brightness(1) blur(0px)", duration: 0.5, ease: "power3.out" }, ${start.toFixed(2)});`;
+  }
+  if (config.transition === "card-wipe") {
+    return `
+      tl.fromTo(".transition-panel", { xPercent: -110, opacity: 0 }, { xPercent: 110, opacity: 1, duration: 0.56, ease: "power3.inOut" }, ${start.toFixed(2)});
+      tl.to(".transition-panel", { opacity: 0, duration: 0.18, ease: "power2.out" }, ${(start + 0.44).toFixed(2)});`;
+  }
+  return `
+      tl.fromTo(".transition-light", { x: 0, opacity: 0 }, { x: ${Math.round(width * 5.2)}, opacity: 0.86, duration: 0.54, ease: "power3.inOut" }, ${start.toFixed(2)});
+      tl.to(".transition-light", { opacity: 0, duration: 0.2, ease: "power2.out" }, ${(start + 0.56).toFixed(2)});`;
+}
+
+function sceneTimeline(scene, index, start, config, width, shortSide) {
+  const sceneSelector = `#scene-${index + 1}`;
+  const duration = scene.duration;
+  const motion = motionLevels[config.motion];
+  const enterTravel = Math.round(shortSide * 0.08 * motion.travel);
+  const exitTravel = Math.round(shortSide * 0.04 * motion.travel);
+  const blur = Math.round(24 * motion.blur);
+  const enterDuration = Number((0.72 / motion.speed).toFixed(2));
+  const exitStart = Math.max(start + duration - 0.46, start + 0.9);
+
+  return `
+      tl.fromTo("${sceneSelector} .eyebrow", { y: ${Math.round(enterTravel * 0.35)}, opacity: 0, filter: "blur(${Math.round(blur * 0.55)}px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: ${Number((0.46 / motion.speed).toFixed(2))}, ease: "power3.out" }, ${(start + 0.16).toFixed(2)});
+      tl.fromTo("${sceneSelector} .word", { y: ${enterTravel}, scale: ${motion.scale - 0.16}, opacity: 0, filter: "blur(${blur}px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: ${enterDuration}, ease: "power4.out", stagger: ${Number((0.075 / motion.speed).toFixed(3))} }, ${(start + 0.28).toFixed(2)});
+      tl.fromTo("${sceneSelector} .subtitle", { y: ${Math.round(enterTravel * 0.42)}, opacity: 0, filter: "blur(${Math.round(blur * 0.55)}px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: ${Number((0.56 / motion.speed).toFixed(2))}, ease: "power3.out" }, ${(start + 0.92).toFixed(2)});
+      tl.fromTo("${sceneSelector} .glass-card", { y: ${Math.round(enterTravel * 1.1)}, rotateX: 16, scale: 0.9, opacity: 0, filter: "blur(${blur}px)" }, { y: 0, rotateX: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: ${Number((0.88 / motion.speed).toFixed(2))}, ease: "power3.out", stagger: ${Number((0.1 / motion.speed).toFixed(2))} }, ${(start + 0.54).toFixed(2)});
+      tl.fromTo("${sceneSelector} .product-frame", { y: ${Math.round(enterTravel * 1.2)}, scale: 0.88, opacity: 0, filter: "blur(${blur}px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: ${Number((0.9 / motion.speed).toFixed(2))}, ease: "power3.out" }, ${(start + 0.44).toFixed(2)});
+      tl.fromTo("${sceneSelector} .mark", { y: ${Math.round(enterTravel * 0.7)}, scale: 0.72, opacity: 0, filter: "blur(${blur}px)" }, { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: ${Number((0.72 / motion.speed).toFixed(2))}, ease: "back.out(1.55)" }, ${(start + 0.2).toFixed(2)});
+      tl.to("${sceneSelector} .device-core, ${sceneSelector} .device-glow", { rotate: 180, duration: ${duration}, ease: "none" }, ${start.toFixed(2)});
+      tl.to("${sceneSelector} .word", { y: -${exitTravel}, opacity: 0, filter: "blur(${Math.round(blur * 0.7)}px)", duration: 0.34, ease: "power2.in", stagger: 0.018 }, ${exitStart.toFixed(2)});
+      tl.to("${sceneSelector} .subtitle, ${sceneSelector} .eyebrow, ${sceneSelector} .glass-card, ${sceneSelector} .product-frame, ${sceneSelector} .mark", { y: -${Math.round(exitTravel * 0.6)}, opacity: 0, filter: "blur(${Math.round(blur * 0.65)}px)", duration: 0.3, ease: "power2.in" }, ${(exitStart + 0.06).toFixed(2)});`;
+}
+
+function createHtml({ id, config, width, height }) {
+  const shortSide = Math.min(width, height);
+  let cursor = 0;
+  const scenes = config.scenes.map((scene, index) => {
+    const markup = sceneMarkup(scene, index, cursor, width, height);
+    cursor += scene.duration;
+    return markup;
+  });
+  const totalDuration = Number(cursor.toFixed(2));
+  let timeline = "";
+  cursor = 0;
+  config.scenes.forEach((scene, index) => {
+    if (index > 0) timeline += transitionTween(config, width, Math.max(cursor - 0.18, 0));
+    timeline += sceneTimeline(scene, index, cursor, config, width, shortSide);
+    cursor += scene.duration;
+  });
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=${width}, height=${height}" />
+    <title>${escapeHtml(config.scenes[0]?.title || id)}</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>${createCss({ id, config, width, height, totalDuration })}
     </style>
   </head>
   <body>
@@ -395,14 +668,17 @@ function createHtml({ id, title, subtitle, preset, width, height, duration, acce
       id="root"
       data-composition-id="${id}"
       data-start="0"
-      data-duration="${duration}"
+      data-duration="${totalDuration}"
       data-width="${width}"
       data-height="${height}"
     >
       <div class="stage-bg"></div>
+      <div class="aurora"></div>
       <div class="grid"></div>
-      <div class="light-sweep"></div>
-      ${presetMarkup(preset, title, subtitle)}
+      <div class="transition-panel"></div>
+      <div class="transition-light"></div>
+      ${scenes.join("\n")}
+      <div class="timeline-chip">${escapeHtml(config.format)} / ${escapeHtml(config.motion)} / ${escapeHtml(config.transition)}</div>
       <div class="vignette"></div>
       <div class="grain"></div>
     </div>
@@ -411,50 +687,13 @@ function createHtml({ id, title, subtitle, preset, width, height, duration, acce
       window.__timelines = window.__timelines || {};
       const tl = gsap.timeline({ paused: true });
 
-      gsap.set(".word, .subtitle, .eyebrow", { opacity: 0 });
-      gsap.set(".glass-card, .product-shell", { opacity: 0 });
-
-      tl.fromTo(".grid",
-        { y: ${Math.round(shortSide * 0.04)}, opacity: 0 },
-        { y: 0, opacity: 0.55, duration: 1.2, ease: "power3.out" },
-        0
-      );
-      tl.to(".light-sweep",
-        { x: ${Math.round(width * 5.2)}, opacity: 0.82, duration: 0.58, ease: "power3.inOut" },
-        0.08
-      );
-      tl.to(".light-sweep", { opacity: 0, duration: 0.24, ease: "power2.out" }, 0.66);
-      tl.fromTo(".eyebrow",
-        { y: ${Math.round(shortSide * 0.025)}, opacity: 0, filter: "blur(18px)" },
-        { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.55, ease: "power3.out" },
-        0.22
-      );
-      tl.fromTo(".word",
-        { y: ${Math.round(shortSide * 0.1)}, scale: 0.82, opacity: 0, filter: "blur(30px)" },
-        { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.82, ease: "power4.out", stagger: 0.08 },
-        0.34
-      );
-      tl.fromTo(".subtitle",
-        { y: ${Math.round(shortSide * 0.04)}, opacity: 0, filter: "blur(16px)" },
-        { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.62, ease: "power3.out" },
-        1.12
-      );
-      tl.fromTo(".glass-card",
-        { y: ${Math.round(shortSide * 0.09)}, rotateX: 16, scale: 0.92, opacity: 0, filter: "blur(22px)" },
-        { y: 0, rotateX: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.9, ease: "power3.out", stagger: 0.11 },
-        0.72
-      );
-      tl.fromTo(".product-shell",
-        { y: ${Math.round(shortSide * 0.12)}, scale: 0.88, opacity: 0, filter: "blur(24px)" },
-        { y: 0, scale: 1, opacity: 1, filter: "blur(0px)", duration: 0.95, ease: "power3.out" },
-        0.62
-      );
-      tl.to(".orb-core", { rotate: 360, duration: ${duration}, ease: "none" }, 0);
-      tl.to(".vignette", { opacity: 0.82, duration: 2.2, repeat: Math.max(0, Math.floor(${duration} / 2.2) - 1), yoyo: true, ease: "sine.inOut" }, 0);
-      tl.to(".grid", { backgroundPosition: "0px ${Math.round(shortSide * 0.16)}px", duration: ${duration}, ease: "none" }, 0);
-      tl.to(".word", { y: -${Math.round(shortSide * 0.035)}, opacity: 0, filter: "blur(18px)", duration: 0.36, ease: "power2.in", stagger: 0.025 }, ${Math.max(duration - 0.7, 1.5)});
-      tl.to(".subtitle, .eyebrow, .glass-card, .product-shell", { opacity: 0, filter: "blur(18px)", duration: 0.34, ease: "power2.in" }, ${Math.max(duration - 0.52, 1.7)});
-      tl.to({}, { duration: ${duration} }, 0);
+      gsap.set(".eyebrow, .word, .subtitle, .glass-card, .product-frame, .mark", { opacity: 0 });
+      tl.fromTo(".grid", { y: ${Math.round(shortSide * 0.035)}, opacity: 0 }, { y: 0, opacity: 0.52, duration: 1.1, ease: "power3.out" }, 0);
+      tl.to(".grid", { backgroundPosition: "0px ${Math.round(shortSide * 0.18)}px", duration: ${totalDuration}, ease: "none" }, 0);
+      tl.fromTo(".aurora", { rotate: 0, scale: 1.25 }, { rotate: 18, scale: 1.38, duration: ${totalDuration}, ease: "sine.inOut" }, 0);
+      tl.to(".vignette", { opacity: 0.84, duration: 2.2, repeat: Math.max(0, Math.floor(${totalDuration} / 2.2) - 1), yoyo: true, ease: "sine.inOut" }, 0);
+      ${timeline}
+      tl.to({}, { duration: ${totalDuration} }, 0);
 
       window.__timelines["${id}"] = tl;
     </script>
@@ -469,44 +708,33 @@ if (args.help || args.h) {
   process.exit(0);
 }
 
-const title = args.title || "Make it feel inevitable";
-const subtitle = args.subtitle || "Fast premium motion for creator videos.";
-const name = slugify(args.name || title || "apple-motion");
-const id = name || "apple-motion";
-const formatKey = args.format || "9:16-4k";
-const format = formats[formatKey];
-const preset = args.preset || "kinetic-text";
-const duration = Number(args.duration || 6);
-const accent = assertHex(args.accent, "#7cf7e8");
+try {
+  const fileConfig = loadConfig(args.config);
+  const config = mergeConfig(fileConfig, args);
+  const format = validateConfig(config);
+  const id = config.name || "motion-kit";
+  const projectDir = resolve("video-projects", id);
 
-if (!format) {
-  console.error(`Unknown format "${formatKey}". Expected one of: ${Object.keys(formats).join(", ")}`);
-  process.exit(2);
-}
-if (!presets.has(preset)) {
-  console.error(`Unknown preset "${preset}". Expected one of: ${Array.from(presets).join(", ")}`);
-  process.exit(2);
-}
-if (!Number.isFinite(duration) || duration <= 0) {
-  console.error("--duration must be a positive number.");
-  process.exit(2);
-}
+  if (existsSync(projectDir)) {
+    if (args.force === "true") {
+      rmSync(projectDir, { recursive: true, force: true });
+    } else {
+      throw new Error(`Project already exists: ${projectDir}. Use --force to overwrite it.`);
+    }
+  }
 
-const projectDir = resolve("video-projects", id);
-if (existsSync(projectDir)) {
-  console.error(`Project already exists: ${projectDir}`);
+  mkdirSync(join(projectDir, "assets"), { recursive: true });
+  mkdirSync(join(projectDir, "compositions"), { recursive: true });
+  writeFileSync(join(projectDir, "hyperframes.json"), createHyperframesJson());
+  writeFileSync(join(projectDir, "meta.json"), createMeta({ id, name: id, ...format }));
+  writeFileSync(join(projectDir, "motion-kit.config.json"), createProjectConfig(config));
+  writeFileSync(join(projectDir, "index.html"), createHtml({ id, config, ...format }));
+
+  console.log(`Created ${format.label} ${config.preset} project: ${projectDir}`);
+  console.log(`Edit:    ${join(projectDir, "motion-kit.config.json")}`);
+  console.log(`Preview: cd ${projectDir} && npm exec -- hyperframes preview`);
+  console.log(`Lint:    cd ${projectDir} && npm exec -- hyperframes lint`);
+} catch (error) {
+  console.error(error.message);
   process.exit(1);
 }
-
-mkdirSync(join(projectDir, "assets"), { recursive: true });
-mkdirSync(join(projectDir, "compositions"), { recursive: true });
-writeFileSync(join(projectDir, "hyperframes.json"), createHyperframesJson());
-writeFileSync(join(projectDir, "meta.json"), createMeta({ id, name: id, ...format }));
-writeFileSync(
-  join(projectDir, "index.html"),
-  createHtml({ id, title, subtitle, preset, ...format, duration, accent })
-);
-
-console.log(`Created ${format.label} ${preset} project: ${projectDir}`);
-console.log(`Preview: cd ${projectDir} && npx hyperframes preview`);
-console.log(`Lint:    cd ${projectDir} && npx hyperframes lint`);

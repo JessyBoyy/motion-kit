@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "generate:apple": "node scripts/apple-motion-generator.mjs",
+    "generate:motion": "node scripts/apple-motion-generator.mjs",
     "preflight": "node scripts/preflight.mjs",
     "preflight:all": "for d in video-projects/*/; do node scripts/preflight.mjs \"$d\" || true; done"
   },
